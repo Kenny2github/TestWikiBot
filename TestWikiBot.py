@@ -82,11 +82,15 @@ def index(curr: dict, tpage: mwc.Page):
     with open('pickles/index.pickle', 'wb') as pickl: # always dump after update
         pickle.dump(curr, pickl)
 
+try:
+    with open('pickles/startfrom.txt', 'r') as startfrom:
+        startfrom = startfrom.read().strip()
+
 for en_page in en.allpages(limit=250,
                            apfilterredir='nonredirects',
-                           apstart=input('Enter a page to start from '
-                                         'or Enter for none').strip()
-                           or None):
+                           apfrom=input('Enter a page to start from '
+                                         'or Enter for from file').strip()
+                           or startfrom):
     print(en_page)
     en_contents = en_page.read()
     tw_page = tw.page('Eng:' + en_page.title, getinfo=True)
@@ -147,7 +151,38 @@ for en_page in en.allpages(limit=250,
         else:
             print('Not edited - contents were identical')
             time.sleep(1) #sleep less since only one request was made not two
+    # Get interwiki links - credit to Apple502j for this part
+    iwlinks = ['en:' + en_page.title]
+    print('Getting iwlinks (see credit comment)')
+    for link in mwp.parse(en_contents, 0, True).ifilter_wikilinks():
+        if re.match('[a-z][a-z]:.*', str(link.title), re.I):
+            iwlinks.append(link.title)
     if hasattr(tran_page, 'missing'):
-        tran_page.edit('{{translate\n|Eng=' + en_page.title + '\n}}',
+        tran_content = '{{translate\n|Eng=' \
+                       + en_page.title \
+                       + '\n|En=' \
+                       + en_page.title \
+                       + '\n'
+        for link in iwlinks:
+            tran_content += '|' \
+                            + str(link).split(':', 1)[0].capitalize() \
+                            + '=' \
+                            + str(link).split(':', 1)[1] \
+                            + '\n'
+        tran_content += '}}'
+        tran_page.edit(tran_content,
                        'Automated edit: Created /translate page')
+        print('Created /translate page')
+    else:
+        tran_content = tran_page.read()
+        tran_mod_content = mwp.parse(tran_content, 0, True)
+        tran_template = tran_mod_content.filter_templates()[0]
+        for link in iwlinks:
+            link = str(link).split(':', 1)
+            if not tran_template.has(link[0].capitalize()):
+                tran_template.add(link[0].capitalize(), link[1])
+        if tran_mod_content != tran_content:
+            tran_page.edit(str(tran_mod_content),
+                           'Automated edit: Updated interwiki links')
+            print('Edited tran_page')
     index(translation_index, tran_page)
